@@ -8,15 +8,20 @@ use rand::rngs::OsRng;
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("0.1.0")
+        .version("0.2.0")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
+        .arg(
+            Arg::with_name("PREFIX")
+                .help("prefix to search for")
+                .required(true)
+                .index(1),
+        )
         .get_matches();
 
-    while true {
-        match try_pair("ava") {
-            Some((pubkey, privkey)) => println!("public: {} private: {}", pubkey, privkey),
-            None => {}
+    loop {
+        if let Some((pubkey, privkey)) = try_pair(matches.value_of("PREFIX").unwrap()) {
+            println!("public: {} private: {}", pubkey, privkey)
         }
     }
 }
@@ -26,8 +31,8 @@ fn try_pair(prefix: &str) -> Option<(String, String)> {
     let keypair: Keypair = Keypair::generate(&mut csprng);
     let public_key = base64::encode(keypair.public);
     if public_key.starts_with(prefix) {
-        return Some((public_key, base64::encode(keypair.secret)));
+        Some((public_key, base64::encode(keypair.secret)))
     } else {
-        return None;
+        None
     }
 }
