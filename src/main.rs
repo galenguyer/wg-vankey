@@ -2,6 +2,7 @@ extern crate base64;
 extern crate ed25519_dalek;
 extern crate rand;
 
+use std::thread;
 use std::time::{Duration, SystemTime};
 use clap::{App, Arg};
 use ed25519_dalek::Keypair;
@@ -22,7 +23,7 @@ fn main() {
 
     let prefix: &str = matches.value_of("PREFIX").unwrap();
     let time_for_one: u128 = time_one().as_nanos();
-    println!("time for one attempt: {}", time_for_one);
+    println!("time for one attempt: {}", format_ns(time_for_one as u64));
     
     // TODO: Do this with exponents not multiplication loops (maybe)
     let mut est_attempts_per_key: u64 = 1;
@@ -30,6 +31,10 @@ fn main() {
        est_attempts_per_key *= 64; 
     });
     println!("estimated attempts per key: {}", est_attempts_per_key);
+    println!("estimated time per key: {}", format_ns(time_for_one as u64 * est_attempts_per_key));
+    println!("press ctrl+c to cancel at any time");
+
+    thread::sleep(Duration::from_secs(5));
 
     loop {
         if let Some((pubkey, privkey)) = try_pair(prefix) {
@@ -57,4 +62,23 @@ fn time_one() -> Duration {
         try_pair(prefix);
     });
     start_time.elapsed().unwrap().checked_div(iterations).unwrap()
+}
+
+fn format_ns(nanos: u64) -> String {
+    if nanos < 1000 {
+        return format!("{}ns", nanos);
+    }
+    else if nanos < (1000*1000) {
+        return format!("{}us", (nanos / 1000));
+    }
+    else if nanos < (1000*1000*1000) {
+        return format!("{}ms", (nanos / (1000*1000)));
+    }
+    else if nanos < (60*1000*1000*1000) {
+        return format!("{}s", (nanos / (1000*1000*1000)));
+    }
+    else if nanos < (60*60*1000*1000*1000) {
+        return format!("{}m", (nanos /  (60*1000*1000*1000)));
+    }
+    return format!("{}h", (nanos / (60*60*1000*1000*1000)));
 }
