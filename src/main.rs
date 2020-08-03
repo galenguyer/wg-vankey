@@ -12,11 +12,27 @@ fn main() {
         .arg(
             Arg::with_name("PREFIX")
                 .help("prefix to search for")
-                .required(true)
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("core-count")
+                .long("core-count")
+                .short("c")
+.takes_value(true)
+                .help(
+                "specify the number of cpu cores to use. defaults to all cores if not specified",
+            ),
         )
         .get_matches();
 
     let prefix: &str = matches.value_of("PREFIX").unwrap();
+    let core_count: usize = match matches.value_of("core-count") {
+        Some(val) => usize::from_str_radix(val, 10).unwrap().min(num_cpus::get()),
+        None => num_cpus::get(),
+    };
+
+    println!("{} cores available, using {}", num_cpus::get(), core_count);
+
     let time_for_one: u128 = time_one().as_nanos();
     println!("time for one attempt: {}", format_ns(time_for_one as u64));
 
@@ -26,6 +42,7 @@ fn main() {
         est_attempts_per_key *= 64;
     });
     println!("estimated attempts per key: {}", est_attempts_per_key);
+
     println!(
         "estimated time per key: {}",
         format_ns(time_for_one as u64 * est_attempts_per_key)
