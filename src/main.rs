@@ -1,8 +1,3 @@
-extern crate base64;
-extern crate ed25519_dalek;
-extern crate num_cpus;
-extern crate rand;
-
 use clap::{App, Arg};
 use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
@@ -18,7 +13,6 @@ fn main() {
             Arg::with_name("PREFIX")
                 .help("prefix to search for")
                 .required(true)
-                .index(1),
         )
         .get_matches();
 
