@@ -7,7 +7,7 @@ use threadpool::ThreadPool;
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("0.3.0")
+        .version("1.0.0")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -24,9 +24,11 @@ fn main() {
                 "specify the number of cpu cores to use.\ndefaults to all cores if not specified",
             ),
         )
+	.arg(Arg::with_name("ignore-case").long("ignore-case").short("i").takes_value(false).help("ignore case matching"))
         .get_matches();
 
-    let prefix = string_to_static_str(matches.value_of("PREFIX").unwrap().to_owned());
+    let prefix: &'static str = string_to_static_str(matches.value_of("PREFIX").unwrap().to_owned());
+    let ignore_case: bool = matches.is_present("ignore-case");
     let core_count: usize = match matches.value_of("core-count") {
         Some(val) => usize::from_str_radix(val, 10).unwrap().min(num_cpus::get()),
         None => num_cpus::get(),
@@ -39,8 +41,11 @@ fn main() {
 
     // TODO: Do this with exponents not multiplication loops (maybe)
     let mut est_attempts_per_key: u64 = 1;
-    prefix.chars().for_each(|_| {
+    prefix.chars().for_each(|c| {
         est_attempts_per_key *= 64;
+        if c.is_ascii_alphabetic() && ignore_case {
+            est_attempts_per_key = est_attempts_per_key / 2;
+        }
     });
     println!("estimated attempts per key: {}", est_attempts_per_key);
 
@@ -56,18 +61,18 @@ fn main() {
     let pool = ThreadPool::new(core_count);
     loop {
         pool.execute(move || {
-            if let Some((pubkey, privkey)) = try_pair(prefix) {
+            if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
                 println!("public: {} private: {}", pubkey, privkey)
             }
         });
     }
 }
 
-fn try_pair(prefix: &'static str) -> Option<(String, String)> {
+fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)> {
     let mut csprng = OsRng {};
     let keypair: Keypair = Keypair::generate(&mut csprng);
     let public_key = base64::encode(keypair.public);
-    if public_key.starts_with(prefix) {
+    if public_key.starts_with(prefix) || (ignore_case && public_key.to_uppercase().starts_with(prefix.to_uppercase().as_str())) {
         Some((public_key, base64::encode(keypair.secret)))
     } else {
         None
@@ -79,7 +84,7 @@ fn time_one() -> Duration {
     let iterations = 1000;
     let start_time = SystemTime::now();
     (0..iterations).for_each(|_| {
-        try_pair(prefix);
+        try_pair(prefix, false);
     });
     start_time
         .elapsed()
