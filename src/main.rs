@@ -37,7 +37,11 @@ fn main() {
     println!("{} cores available, using {}", num_cpus::get(), core_count);
 
     let time_for_one: u128 = time_one().as_nanos();
-    println!("time for one attempt: {}", format_ns(time_for_one as u64));
+    println!(
+        "time for one attempt: {} ({} keys/second)",
+        format_ns(time_for_one as u64),
+        (1000000000 * core_count / (time_for_one as usize))
+    );
 
     // TODO: Do this with exponents not multiplication loops (maybe)
     let mut est_attempts_per_key: u64 = 1;
