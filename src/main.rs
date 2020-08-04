@@ -3,10 +3,11 @@ use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
 use std::thread;
 use std::time::{Duration, SystemTime};
+use threadpool::ThreadPool;
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("0.2.0")
+        .version("0.3.0")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -18,14 +19,14 @@ fn main() {
             Arg::with_name("core-count")
                 .long("core-count")
                 .short("c")
-.takes_value(true)
+                .takes_value(true)
                 .help(
-                "specify the number of cpu cores to use. defaults to all cores if not specified",
+                "specify the number of cpu cores to use.\ndefaults to all cores if not specified",
             ),
         )
         .get_matches();
 
-    let prefix: &str = matches.value_of("PREFIX").unwrap();
+    let prefix = string_to_static_str(matches.value_of("PREFIX").unwrap().to_owned());
     let core_count: usize = match matches.value_of("core-count") {
         Some(val) => usize::from_str_radix(val, 10).unwrap().min(num_cpus::get()),
         None => num_cpus::get(),
@@ -45,19 +46,24 @@ fn main() {
 
     println!(
         "estimated time per key: {}",
-        format_ns(time_for_one as u64 * est_attempts_per_key)
+        format_ns((time_for_one / (core_count as u128)) as u64 * est_attempts_per_key)
     );
     println!("press ctrl+c to cancel at any time");
 
     thread::sleep(Duration::from_secs(2));
+
+    // TODO: this seems to create a pool with one more thread than specified
+    let pool = ThreadPool::new(core_count);
     loop {
-        if let Some((pubkey, privkey)) = try_pair(prefix) {
-            println!("public: {} private: {}", pubkey, privkey)
-        }
+        pool.execute(move || {
+            if let Some((pubkey, privkey)) = try_pair(prefix) {
+                println!("public: {} private: {}", pubkey, privkey)
+            }
+        });
     }
 }
 
-fn try_pair(prefix: &str) -> Option<(String, String)> {
+fn try_pair(prefix: &'static str) -> Option<(String, String)> {
     let mut csprng = OsRng {};
     let keypair: Keypair = Keypair::generate(&mut csprng);
     let public_key = base64::encode(keypair.public);
@@ -69,7 +75,7 @@ fn try_pair(prefix: &str) -> Option<(String, String)> {
 }
 
 fn time_one() -> Duration {
-    let prefix: &str = "test";
+    let prefix = string_to_static_str(String::from("test"));
     let iterations = 1000;
     let start_time = SystemTime::now();
     (0..iterations).for_each(|_| {
@@ -95,4 +101,8 @@ fn format_ns(nanos: u64) -> String {
         return format!("{}m", (nanos / (60 * 1000 * 1000 * 1000)));
     }
     return format!("{}h", (nanos / (60 * 60 * 1000 * 1000 * 1000)));
+}
+
+fn string_to_static_str(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
 }
