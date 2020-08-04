@@ -7,7 +7,7 @@ use threadpool::ThreadPool;
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("1.0.0")
+        .version("1.0.1")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -44,7 +44,7 @@ fn main() {
     prefix.chars().for_each(|c| {
         est_attempts_per_key *= 64;
         if c.is_ascii_alphabetic() && ignore_case {
-            est_attempts_per_key = est_attempts_per_key / 2;
+            est_attempts_per_key /= 2;
         }
     });
     println!("estimated attempts per key: {}", est_attempts_per_key);
@@ -72,7 +72,12 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
     let mut csprng = OsRng {};
     let keypair: Keypair = Keypair::generate(&mut csprng);
     let public_key = base64::encode(keypair.public);
-    if public_key.starts_with(prefix) || (ignore_case && public_key.to_uppercase().starts_with(prefix.to_uppercase().as_str())) {
+    if public_key.starts_with(prefix)
+        || (ignore_case
+            && public_key
+                .to_uppercase()
+                .starts_with(prefix.to_uppercase().as_str()))
+    {
         Some((public_key, base64::encode(keypair.secret)))
     } else {
         None
