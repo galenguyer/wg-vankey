@@ -3,7 +3,6 @@ use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
 use std::thread;
 use std::time::{Duration, Instant};
-use threadpool::ThreadPool;
 
 fn main() {
     let matches = App::new("wg-vankey")
@@ -73,14 +72,20 @@ fn main() {
     // wait two seconds to give the user a chance to cancel if they did an accidentally quick key
     thread::sleep(Duration::from_secs(2));
 
-    // TODO: this seems to create a pool with one more thread than specified
-    let pool = ThreadPool::new(core_count);
-    loop {
-        pool.execute(move || {
+    let mut threads = Vec::new();
+    for _ in 0..core_count {
+        // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
+        #[allow(clippy::same_item_push)]
+        threads.push(std::thread::spawn(move || loop {
             if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
                 println!("public: {} private: {}", pubkey, privkey)
             }
-        });
+        }));
+    }
+
+    // In theory, you should only need to join one of the threads, but this is more robust.
+    for thread in threads {
+        thread.join().expect("thread panicked with error")
     }
 }
 
