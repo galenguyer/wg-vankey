@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("1.2.0")
+        .version("1.2.1")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -94,18 +94,23 @@ fn main() {
         for _ in 0..core_count {
             let arc_regex = Arc::clone(&arc_regex);
             // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
-	    #[allow(clippy::unknown_clippy_lints)]
+            #[allow(clippy::unknown_clippy_lints)]
             #[allow(clippy::same_item_push)]
             threads.push(std::thread::spawn(move || loop {
                 if let Some((pubkey, privkey)) = try_regex(&arc_regex) {
-                    println!("public: {} private: {}", pubkey, privkey)
+                    println!(
+                        "{}: public: {} private: {}",
+                        chrono::Utc::now().format("%T%.3f").to_string(),
+                        pubkey,
+                        privkey
+                    )
                 }
             }));
         }
     } else {
         for _ in 0..core_count {
             // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
-	    #[allow(clippy::unknown_clippy_lints)]
+            #[allow(clippy::unknown_clippy_lints)]
             #[allow(clippy::same_item_push)]
             threads.push(std::thread::spawn(move || loop {
                 if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
@@ -160,7 +165,7 @@ fn time_one(use_regex: bool) -> Duration {
     let iterations = 1000;
     let start_time = Instant::now();
     if use_regex {
-	let t_regex: Arc<Regex> = Arc::new(Regex::new("t[o|0]ast").unwrap());
+        let t_regex: Arc<Regex> = Arc::new(Regex::new("t[o|0]ast").unwrap());
         (0..iterations).for_each(|_| {
             try_regex(&t_regex);
         });
