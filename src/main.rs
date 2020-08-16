@@ -1,12 +1,14 @@
 use clap::{App, Arg};
 use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
+use regex::{Regex, RegexBuilder};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("1.1.0")
+        .version("1.2.0")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -24,12 +26,20 @@ fn main() {
             ),
         )
 	.arg(Arg::with_name("ignore-case").long("ignore-case").short("i").takes_value(false).help("ignore case matching"))
+	.arg(
+            Arg::with_name("regex")
+		.long("regex")
+		.short("r")
+		.takes_value(false)
+		.help("treat the input as regex instead of a plain string"),
+	    )
         .get_matches();
 
     // the prefix has to be a static str in order to ensure it lives long enough for future threads
     // to consume it
     let prefix: &'static str = string_to_static_str(matches.value_of("PREFIX").unwrap().to_owned());
     let ignore_case: bool = matches.is_present("ignore-case");
+    let use_regex: bool = matches.is_present("regex");
     // set the core count to either the count given or the number of available cores
     let core_count: usize = match matches.value_of("core-count") {
         Some(val) => usize::from_str_radix(val, 10).unwrap().min(num_cpus::get()),
@@ -38,49 +48,71 @@ fn main() {
     println!("{} cores available, using {}", num_cpus::get(), core_count);
 
     // estimate how long a single key generation takes for time estimation later
-    let time_for_one: Duration = time_one();
+    let time_for_one: Duration = time_one(use_regex);
     println!(
         "time for one attempt: {:?} ({} keys/second)",
         time_for_one,
         ((core_count as f64) / time_for_one.as_secs_f64()).round()
     );
 
-    // estimate how many attempts each key will take
-    let mut est_attempts_per_key: u32 = 1;
-    prefix.chars().for_each(|c| {
-        // each additional character given increases the needed guesses by 64-fold
-        est_attempts_per_key *= 64;
-        // if ignore_case is set, each letter has two valid options, halving the needed attempts
-        if ignore_case && c.is_ascii_alphabetic() {
-            est_attempts_per_key /= 2;
-        }
-    });
-    println!("estimated attempts per key: {}", est_attempts_per_key);
+    if !use_regex {
+        // estimate how many attempts each key will take
+        let mut est_attempts_per_key: u32 = 1;
+        prefix.chars().for_each(|c| {
+            // each additional character given increases the needed guesses by 64-fold
+            est_attempts_per_key *= 64;
+            // if ignore_case is set, each letter has two valid options, halving the needed attempts
+            if ignore_case && c.is_ascii_alphabetic() {
+                est_attempts_per_key /= 2;
+            }
+        });
+        println!("estimated attempts per key: {}", est_attempts_per_key);
 
-    // estimate time per key using the time for a single key, the number of cores
-    // to use, and how many attempts each key is estimated to take
-    println!(
-        "estimated time per key: {:?}",
-        time_for_one
-            .checked_mul(est_attempts_per_key)
-            .unwrap()
-            .checked_div(core_count as u32)
-            .unwrap()
-    );
+        // estimate time per key using the time for a single key, the number of cores
+        // to use, and how many attempts each key is estimated to take
+        println!(
+            "estimated time per key: {:?}",
+            time_for_one
+                .checked_mul(est_attempts_per_key)
+                .unwrap()
+                .checked_div(core_count as u32)
+                .unwrap()
+        );
+    }
     println!("press ctrl+c to cancel at any time");
 
     // wait two seconds to give the user a chance to cancel if they did an accidentally quick key
     thread::sleep(Duration::from_secs(2));
 
     let mut threads = Vec::new();
-    for _ in 0..core_count {
-        // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
-        #[allow(clippy::same_item_push)]
-        threads.push(std::thread::spawn(move || loop {
-            if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
-                println!("public: {} private: {}", pubkey, privkey)
-            }
-        }));
+    if use_regex {
+        let key_regex: Regex = RegexBuilder::new(prefix)
+            .case_insensitive(ignore_case)
+            .build()
+            .unwrap();
+        let arc_regex = Arc::new(key_regex);
+        for _ in 0..core_count {
+            let arc_regex = Arc::clone(&arc_regex);
+            // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
+	    #[allow(clippy::unknown_clippy_lints)]
+            #[allow(clippy::same_item_push)]
+            threads.push(std::thread::spawn(move || loop {
+                if let Some((pubkey, privkey)) = try_regex(&arc_regex) {
+                    println!("public: {} private: {}", pubkey, privkey)
+                }
+            }));
+        }
+    } else {
+        for _ in 0..core_count {
+            // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
+	    #[allow(clippy::unknown_clippy_lints)]
+            #[allow(clippy::same_item_push)]
+            threads.push(std::thread::spawn(move || loop {
+                if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
+                    println!("public: {} private: {}", pubkey, privkey)
+                }
+            }));
+        }
     }
 
     // In theory, you should only need to join one of the threads, but this is more robust.
@@ -108,14 +140,35 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
     }
 }
 
+fn try_regex(prefix: &Arc<Regex>) -> Option<(String, String)> {
+    // generate a key pair but don't encode the private key yet in order to save time
+    let mut csprng = OsRng {};
+    let keypair: Keypair = Keypair::generate(&mut csprng);
+    let public_key = base64::encode(keypair.public);
+    // if the public key starts with the prefix OR if ignore_case is set and a case-insensitive match
+    // is made, return the public key and encoded private key
+    if prefix.is_match(&public_key) {
+        Some((public_key, base64::encode(keypair.secret)))
+    } else {
+        None
+    }
+}
+
 // run 1,000 iterations of key generation to get a good average of how long each key takes to generate
-fn time_one() -> Duration {
+fn time_one(use_regex: bool) -> Duration {
     let prefix = string_to_static_str(String::from("test"));
     let iterations = 1000;
     let start_time = Instant::now();
-    (0..iterations).for_each(|_| {
-        try_pair(prefix, false);
-    });
+    if use_regex {
+	let t_regex: Arc<Regex> = Arc::new(Regex::new("t[o|0]ast").unwrap());
+        (0..iterations).for_each(|_| {
+            try_regex(&t_regex);
+        });
+    } else {
+        (0..iterations).for_each(|_| {
+            try_pair(prefix, false);
+        });
+    }
     start_time.elapsed().checked_div(iterations).unwrap()
 }
 
