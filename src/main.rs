@@ -1,14 +1,15 @@
 use clap::{App, Arg};
-use ed25519_dalek::Keypair;
 use rand::rngs::OsRng;
 use regex::{Regex, RegexBuilder};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
+use x25519_dalek::PublicKey;
+use x25519_dalek::StaticSecret as SecretKey;
 
 fn main() {
     let matches = App::new("wg-vankey")
-        .version("1.2.1")
+        .version("2.0.0")
         .author("Galen Guyer <galen@galenguyer.com>")
         .about("generate vanity wireguard public keys")
         .arg(
@@ -128,9 +129,8 @@ fn main() {
 
 fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)> {
     // generate a key pair but don't encode the private key yet in order to save time
-    let mut csprng = OsRng {};
-    let keypair: Keypair = Keypair::generate(&mut csprng);
-    let public_key = base64::encode(keypair.public);
+    let private_key: SecretKey = SecretKey::new(OsRng);
+    let public_key = base64::encode(PublicKey::from(&private_key).to_bytes());
     // if the public key starts with the prefix OR if ignore_case is set and a case-insensitive match
     // is made, return the public key and encoded private key
     if public_key.starts_with(prefix)
@@ -139,7 +139,7 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
                 .to_uppercase()
                 .starts_with(prefix.to_uppercase().as_str()))
     {
-        Some((public_key, base64::encode(keypair.secret)))
+        Some((public_key, base64::encode(private_key.to_bytes())))
     } else {
         None
     }
@@ -147,13 +147,12 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
 
 fn try_regex(prefix: &Arc<Regex>) -> Option<(String, String)> {
     // generate a key pair but don't encode the private key yet in order to save time
-    let mut csprng = OsRng {};
-    let keypair: Keypair = Keypair::generate(&mut csprng);
-    let public_key = base64::encode(keypair.public);
+    let private_key: SecretKey = SecretKey::new(OsRng);
+    let public_key = base64::encode(PublicKey::from(&private_key).to_bytes());
     // if the public key starts with the prefix OR if ignore_case is set and a case-insensitive match
     // is made, return the public key and encoded private key
     if prefix.is_match(&public_key) {
-        Some((public_key, base64::encode(keypair.secret)))
+        Some((public_key, base64::encode(private_key.to_bytes())))
     } else {
         None
     }

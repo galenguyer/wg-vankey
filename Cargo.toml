@@ -1,19 +1,18 @@
 [package]
 name = "wg-vankey"
-version = "1.2.1"
+version = "2.0.0"
 authors = ["Galen Guyer <galen@galenguyer.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ed25519-dalek = "1.0.0-pre.4"
-rand = "0.7.3"
-sha2 = "0.9.1"
 base64 = "0.12.3"
+chrono = "0.4.15"
 clap = "2.33.1"
 num_cpus = "1.13.0"
-threadpool = "1.8.1"
+rand = "0.7.3"
 regex = "1.3.9"
-chrono = "0.4.15"
-
+sha2 = "0.9.1"
+threadpool = "1.8.1"
+x25519-dalek = "1.0.1"
