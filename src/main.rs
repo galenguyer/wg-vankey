@@ -1,5 +1,7 @@
+use base64::Engine;
+use base64::engine::general_purpose as bs64;
 use clap::{App, Arg};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use regex::{Regex, RegexBuilder};
 use std::sync::Arc;
 use std::thread;
@@ -43,7 +45,7 @@ fn main() {
     let use_regex: bool = matches.is_present("regex");
     // set the core count to either the count given or the number of available cores
     let core_count: usize = match matches.value_of("core-count") {
-        Some(val) => usize::from_str_radix(val, 10).unwrap().min(num_cpus::get()),
+        Some(val) => val.parse::<usize>().unwrap().min(num_cpus::get()),
         None => num_cpus::get(),
     };
     println!("{} cores available, using {}", num_cpus::get(), core_count);
@@ -94,9 +96,6 @@ fn main() {
         let arc_regex = Arc::new(key_regex);
         for _ in 0..core_count {
             let arc_regex = Arc::clone(&arc_regex);
-            // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
-            #[allow(clippy::unknown_clippy_lints)]
-            #[allow(clippy::same_item_push)]
             threads.push(std::thread::spawn(move || loop {
                 if let Some((pubkey, privkey)) = try_regex(&arc_regex) {
                     println!(
@@ -110,9 +109,6 @@ fn main() {
         }
     } else {
         for _ in 0..core_count {
-            // TODO: Remove #[allow] when https://github.com/rust-lang/rust-clippy/issues/5902 is closed
-            #[allow(clippy::unknown_clippy_lints)]
-            #[allow(clippy::same_item_push)]
             threads.push(std::thread::spawn(move || loop {
                 if let Some((pubkey, privkey)) = try_pair(prefix, ignore_case) {
                     println!("public: {} private: {}", pubkey, privkey)
@@ -130,7 +126,7 @@ fn main() {
 fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)> {
     // generate a key pair but don't encode the private key yet in order to save time
     let private_key: SecretKey = SecretKey::new(OsRng);
-    let public_key = base64::encode(PublicKey::from(&private_key).to_bytes());
+    let public_key = bs64::STANDARD.encode(PublicKey::from(&private_key).to_bytes());
     // if the public key starts with the prefix OR if ignore_case is set and a case-insensitive match
     // is made, return the public key and encoded private key
     if public_key.starts_with(prefix)
@@ -139,7 +135,7 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
                 .to_uppercase()
                 .starts_with(prefix.to_uppercase().as_str()))
     {
-        Some((public_key, base64::encode(private_key.to_bytes())))
+        Some((public_key, bs64::STANDARD.encode(private_key.to_bytes())))
     } else {
         None
     }
@@ -148,11 +144,11 @@ fn try_pair(prefix: &'static str, ignore_case: bool) -> Option<(String, String)>
 fn try_regex(prefix: &Arc<Regex>) -> Option<(String, String)> {
     // generate a key pair but don't encode the private key yet in order to save time
     let private_key: SecretKey = SecretKey::new(OsRng);
-    let public_key = base64::encode(PublicKey::from(&private_key).to_bytes());
+    let public_key = bs64::STANDARD.encode(PublicKey::from(&private_key).to_bytes());
     // if the public key starts with the prefix OR if ignore_case is set and a case-insensitive match
     // is made, return the public key and encoded private key
     if prefix.is_match(&public_key) {
-        Some((public_key, base64::encode(private_key.to_bytes())))
+        Some((public_key, bs64::STANDARD.encode(private_key.to_bytes())))
     } else {
         None
     }
